@@ -436,6 +436,7 @@ impl From<&ModelUpgrade> for ModelInfoUpgrade {
 /// Response wrapper for `/models`.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS, JsonSchema, Default)]
 pub struct ModelsResponse {
+    #[serde(alias = "data")]
     pub models: Vec<ModelInfo>,
 }
 

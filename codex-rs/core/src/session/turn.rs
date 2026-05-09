@@ -1849,6 +1849,15 @@ async fn try_run_sampling_request(
         turn_context.model_info.slug.as_str(),
         turn_context.provider.info().name.as_str(),
     );
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let full_prompt_path = format!("logs/full_prompt_{}_{}.txt", turn_context.sub_id, timestamp);
+    let _ = std::fs::create_dir_all("logs");
+    let _ = std::fs::write(&full_prompt_path, format!("{:#?}", prompt));
+
     let mut stream = client_session
         .stream(
             prompt,
@@ -2110,6 +2119,16 @@ async fn try_run_sampling_request(
                 token_usage,
                 end_turn,
             } => {
+                if let Some(usage) = &token_usage {
+                    let usage_str = format!("\n\nToken Usage: {:#?}", usage);
+                    use std::io::Write;
+                    if let Ok(mut file) = std::fs::OpenOptions::new()
+                        .append(true)
+                        .open(&full_prompt_path)
+                    {
+                        let _ = file.write_all(usage_str.as_bytes());
+                    }
+                }
                 flush_assistant_text_segments_all(
                     &sess,
                     &turn_context,
