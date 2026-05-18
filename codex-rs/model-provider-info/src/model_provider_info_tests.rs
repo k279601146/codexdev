@@ -112,7 +112,7 @@ fn test_deserialize_chat_wire_api_shows_helpful_error() {
 name = "OpenAI using Chat Completions"
 base_url = "https://api.openai.com/v1"
 env_key = "OPENAI_API_KEY"
-wire_api = "chat"
+wire_api = "responses"
         "#;
 
     let err = toml::from_str::<ModelProviderInfo>(provider_toml).unwrap_err();
