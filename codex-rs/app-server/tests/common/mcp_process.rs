@@ -56,7 +56,9 @@ use codex_app_server_protocol::McpServerToolCallParams;
 use codex_app_server_protocol::MockExperimentalMethodParams;
 use codex_app_server_protocol::ModelListParams;
 use codex_app_server_protocol::ModelProviderCapabilitiesReadParams;
+use codex_app_server_protocol::PermissionProfileListParams;
 use codex_app_server_protocol::PluginInstallParams;
+use codex_app_server_protocol::PluginInstalledParams;
 use codex_app_server_protocol::PluginListParams;
 use codex_app_server_protocol::PluginReadParams;
 use codex_app_server_protocol::PluginSkillReadParams;
@@ -560,6 +562,15 @@ impl McpProcess {
         self.send_request("experimentalFeature/list", params).await
     }
 
+    /// Send a `permissionProfile/list` JSON-RPC request.
+    pub async fn send_permission_profile_list_request(
+        &mut self,
+        params: PermissionProfileListParams,
+    ) -> anyhow::Result<i64> {
+        let params = Some(serde_json::to_value(params)?);
+        self.send_request("permissionProfile/list", params).await
+    }
+
     /// Send an `experimentalFeature/enablement/set` JSON-RPC request.
     pub async fn send_experimental_feature_enablement_set_request(
         &mut self,
@@ -682,6 +693,15 @@ impl McpProcess {
     ) -> anyhow::Result<i64> {
         let params = Some(serde_json::to_value(params)?);
         self.send_request("plugin/list", params).await
+    }
+
+    /// Send a `plugin/installed` JSON-RPC request.
+    pub async fn send_plugin_installed_request(
+        &mut self,
+        params: PluginInstalledParams,
+    ) -> anyhow::Result<i64> {
+        let params = Some(serde_json::to_value(params)?);
+        self.send_request("plugin/installed", params).await
     }
 
     /// Send a `plugin/read` JSON-RPC request.
