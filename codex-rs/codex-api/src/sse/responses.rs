@@ -381,6 +381,18 @@ pub fn process_responses_event(
                 debug!("failed to parse ResponseItem from output_item.added");
             }
         }
+        "response.image_generation_call.generating" => {
+            if let Some(item_id) = event.item_id {
+                return Ok(Some(ResponseEvent::OutputItemAdded(
+                    ResponseItem::ImageGenerationCall {
+                        id: item_id,
+                        status: "in_progress".to_string(),
+                        revised_prompt: None,
+                        result: String::new(),
+                    },
+                )));
+            }
+        }
         "response.reasoning_summary_part.added" => {
             if let Some(summary_index) = event.summary_index {
                 return Ok(Some(ResponseEvent::ReasoningSummaryPartAdded {
@@ -759,6 +771,60 @@ mod tests {
             }) if call_id.as_deref() == Some("search-1")
                 && execution == "client"
                 && arguments == &json!({"query": "calendar create", "limit": 1})
+        );
+    }
+
+    #[tokio::test]
+    async fn parses_started_image_generation_output_item_added_without_result() {
+        let events = run_sse(vec![
+            json!({
+                "type": "response.output_item.added",
+                "item": {
+                    "id": "ig_123",
+                    "type": "image_generation_call",
+                    "status": "in_progress"
+                }
+            }),
+            json!({
+                "type": "response.completed",
+                "response": { "id": "resp1" }
+            }),
+        ])
+        .await;
+
+        assert_matches!(
+            &events[0],
+            ResponseEvent::OutputItemAdded(ResponseItem::ImageGenerationCall {
+                id,
+                status,
+                revised_prompt: None,
+                result,
+            }) if id == "ig_123" && status == "in_progress" && result.is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn parses_image_generation_generating_event_as_output_item_added() {
+        let events = run_sse(vec![
+            json!({
+                "type": "response.image_generation_call.generating",
+                "item_id": "ig_123"
+            }),
+            json!({
+                "type": "response.completed",
+                "response": { "id": "resp1" }
+            }),
+        ])
+        .await;
+
+        assert_matches!(
+            &events[0],
+            ResponseEvent::OutputItemAdded(ResponseItem::ImageGenerationCall {
+                id,
+                status,
+                revised_prompt: None,
+                result,
+            }) if id == "ig_123" && status == "in_progress" && result.is_empty()
         );
     }
 

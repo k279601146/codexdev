@@ -1864,7 +1864,6 @@ async fn try_run_sampling_request(
                     | ResponseItem::ContextCompaction { .. }
                     | ResponseItem::Other => false,
                 };
-
                 let output_result =
                     match handle_output_item_done(&mut ctx, item, previously_streamed_item)
                         .instrument(handle_responses)
@@ -1907,6 +1906,14 @@ async fn try_run_sampling_request(
                 .await
                 {
                     let mut turn_item = turn_item;
+                    if active_item_is_streaming_to_client
+                        && let Some(active_item) = active_item.as_ref()
+                        && matches!(active_item, TurnItem::ImageGeneration(_))
+                        && matches!(turn_item, TurnItem::ImageGeneration(_))
+                        && active_item.id() == turn_item.id()
+                    {
+                        continue;
+                    }
                     let stream_item_to_client = !defer_streamed_turn_items_for_contributors;
                     let mut seeded_parsed: Option<ParsedAssistantTextDelta> = None;
                     let mut seeded_item_id: Option<String> = None;

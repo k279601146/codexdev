@@ -9,6 +9,7 @@ use super::last_assistant_message_from_item;
 use super::response_item_may_include_external_context;
 use super::save_image_generation_result;
 use crate::session::tests::make_session_and_context;
+use crate::session::tests::make_session_and_context_with_rx;
 use crate::tools::ToolRouter;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::turn_diff_tracker::TurnDiffTracker;
@@ -25,9 +26,11 @@ use codex_protocol::models::LocalShellExecAction;
 use codex_protocol::models::LocalShellStatus;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::EventMsg;
 use codex_utils_absolute_path::test_support::PathExt;
 use pretty_assertions::assert_eq;
 use std::sync::Arc;
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
 fn assistant_output_text(text: &str) -> ResponseItem {
@@ -257,6 +260,34 @@ async fn handle_non_tool_response_item_runs_turn_item_contributors_only_when_req
     assert_eq!(text, "hello world");
 }
 
+struct BlockingContributor {
+    started_tx: std::sync::Mutex<Option<oneshot::Sender<()>>>,
+    release_rx: std::sync::Mutex<Option<oneshot::Receiver<()>>>,
+}
+
+#[async_trait::async_trait]
+impl TurnItemContributor for BlockingContributor {
+    async fn contribute(
+        &self,
+        _thread_store: &ExtensionData,
+        _turn_store: &ExtensionData,
+        _item: &mut TurnItem,
+    ) -> Result<(), String> {
+        if let Some(tx) = self.started_tx.lock().expect("lock started sender").take() {
+            let _ = tx.send(());
+        }
+        let rx = self
+            .release_rx
+            .lock()
+            .expect("lock release receiver")
+            .take();
+        if let Some(rx) = rx {
+            let _ = rx.await;
+        }
+        Ok(())
+    }
+}
+
 #[tokio::test]
 async fn handle_output_item_done_returns_contributed_last_agent_message() {
     let (mut session, turn_context) = make_session_and_context().await;
@@ -299,6 +330,81 @@ async fn handle_output_item_done_returns_contributed_last_agent_message() {
         output.last_agent_message.as_deref(),
         Some("contributed assistant text")
     );
+}
+
+#[tokio::test]
+async fn image_generation_done_emits_started_before_finalization_finishes() {
+    let (mut session, turn_context, rx) = make_session_and_context_with_rx().await;
+    let (contributor_started_tx, contributor_started_rx) = oneshot::channel();
+    let (release_tx, release_rx) = oneshot::channel();
+    let mut builder = codex_extension_api::ExtensionRegistryBuilder::new();
+    builder.turn_item_contributor(Arc::new(BlockingContributor {
+        started_tx: std::sync::Mutex::new(Some(contributor_started_tx)),
+        release_rx: std::sync::Mutex::new(Some(release_rx)),
+    }));
+    Arc::get_mut(&mut session)
+        .expect("session should be uniquely owned")
+        .services
+        .extensions = Arc::new(builder.build());
+
+    let router = Arc::new(ToolRouter::from_turn_context(
+        &turn_context,
+        crate::tools::router::ToolRouterParams {
+            mcp_tools: None,
+            deferred_mcp_tools: None,
+            discoverable_tools: None,
+            extension_tool_executors: Vec::new(),
+            dynamic_tools: turn_context.dynamic_tools.as_slice(),
+        },
+    ));
+    let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
+    let tool_runtime = ToolCallRuntime::new(
+        router,
+        Arc::clone(&session),
+        Arc::clone(&turn_context),
+        tracker,
+    );
+    let mut ctx = HandleOutputCtx {
+        sess: Arc::clone(&session),
+        turn_context: Arc::clone(&turn_context),
+        turn_store: Arc::new(ExtensionData::new(turn_context.sub_id.clone())),
+        tool_runtime,
+        cancellation_token: CancellationToken::new(),
+    };
+    let item = ResponseItem::ImageGenerationCall {
+        id: "ig-blocked".to_string(),
+        status: "completed".to_string(),
+        revised_prompt: Some("blue square".to_string()),
+        result: "Zm9v".to_string(),
+    };
+
+    let handle = tokio::spawn(async move {
+        handle_output_item_done(&mut ctx, item, /*previously_active_item*/ None)
+            .await
+            .expect("image generation should complete")
+    });
+    contributor_started_rx
+        .await
+        .expect("finalization should reach blocking contributor");
+
+    let event = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+        .await
+        .expect("started event should not wait for finalization")
+        .expect("event channel should stay open");
+    let EventMsg::ItemStarted(started) = event.msg else {
+        panic!("expected image generation item/started");
+    };
+    let TurnItem::ImageGeneration(image_item) = started.item else {
+        panic!("expected image generation item");
+    };
+    assert_eq!(image_item.id, "ig-blocked");
+    assert_eq!(image_item.status, "in_progress");
+    assert_eq!(image_item.result, "");
+    assert_eq!(image_item.revised_prompt, None);
+    assert_eq!(image_item.saved_path, None);
+
+    release_tx.send(()).expect("release contributor");
+    handle.await.expect("join handle");
 }
 
 #[tokio::test]

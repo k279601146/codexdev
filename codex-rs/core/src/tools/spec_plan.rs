@@ -59,7 +59,6 @@ use codex_login::AuthManager;
 use codex_mcp::ToolInfo;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::openai_models::ConfigShellToolType;
-use codex_protocol::openai_models::InputModality;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_tools::DiscoverableTool;
@@ -315,19 +314,11 @@ fn agent_jobs_worker_tools_enabled(turn_context: &TurnContext) -> bool {
 }
 
 fn image_generation_tool_enabled(turn_context: &TurnContext) -> bool {
-    turn_context
-        .auth_manager
-        .as_deref()
-        .is_some_and(AuthManager::current_auth_uses_codex_backend)
-        && turn_context.provider.capabilities().image_generation
+    turn_context.provider.capabilities().image_generation
         && turn_context
             .features
             .get()
             .enabled(Feature::ImageGeneration)
-        && turn_context
-            .model_info
-            .input_modalities
-            .contains(&InputModality::Image)
 }
 
 fn wait_agent_timeout_options(turn_context: &TurnContext) -> WaitAgentTimeoutOptions {

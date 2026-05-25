@@ -382,6 +382,16 @@ pub(crate) async fn handle_output_item_done(
         }
         // No tool call: convert messages/reasoning into turn items and mark them as complete.
         Ok(None) => {
+            let emitted_provisional_start = if previously_active_item.is_none()
+                && let Some(started_item) = provisional_image_generation_started_item(&item)
+            {
+                ctx.sess
+                    .emit_turn_item_started(&ctx.turn_context, &started_item)
+                    .await;
+                true
+            } else {
+                false
+            };
             let finalized_turn_item = finalize_non_tool_response_item(
                 ctx.sess.as_ref(),
                 ctx.turn_context.as_ref(),
@@ -394,7 +404,7 @@ pub(crate) async fn handle_output_item_done(
                 .as_ref()
                 .map(|finalized| finalized.facts.clone());
             if let Some(finalized_turn_item) = finalized_turn_item {
-                if previously_active_item.is_none() {
+                if previously_active_item.is_none() && !emitted_provisional_start {
                     let mut started_item = finalized_turn_item.turn_item.clone();
                     if let TurnItem::ImageGeneration(item) = &mut started_item {
                         item.status = "in_progress".to_string();
@@ -452,6 +462,22 @@ pub(crate) async fn handle_output_item_done(
     Ok(output)
 }
 
+fn provisional_image_generation_started_item(item: &ResponseItem) -> Option<TurnItem> {
+    let ResponseItem::ImageGenerationCall { .. } = item else {
+        return None;
+    };
+
+    let mut started_item = parse_turn_item(item)?;
+    if let TurnItem::ImageGeneration(image_item) = &mut started_item {
+        image_item.status = "in_progress".to_string();
+        image_item.revised_prompt = None;
+        image_item.result.clear();
+        image_item.saved_path = None;
+        return Some(started_item);
+    }
+    None
+}
+
 pub(crate) async fn handle_non_tool_response_item(
     sess: &Session,
     turn_context: &TurnContext,
@@ -487,6 +513,9 @@ pub(crate) async fn handle_non_tool_response_item(
                 }
             }
             if let TurnItem::ImageGeneration(image_item) = &mut turn_item {
+                if image_item.result.trim().is_empty() {
+                    return Some(turn_item);
+                }
                 let session_id = sess.conversation_id.to_string();
                 match save_image_generation_result(
                     &turn_context.config.codex_home,
