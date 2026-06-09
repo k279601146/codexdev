@@ -20,11 +20,11 @@ function Write-Warn {
 }
 
 function Invoke-Git {
-    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)
+    $GitArgs = $args
 
-    & git @Args
+    & git @GitArgs
     if ($LASTEXITCODE -ne 0) {
-        throw "git $($Args -join ' ') failed with exit code $LASTEXITCODE"
+        throw "git $($GitArgs -join ' ') failed with exit code $LASTEXITCODE"
     }
 }
 
@@ -59,9 +59,11 @@ try {
     Write-Step "Checking for local changes"
     $dirty = (& git status --porcelain)
     if ($dirty) {
-        Write-Warn "Uncommitted or unstaged changes were found."
+        Write-Warn "Uncommitted, unstaged, or untracked changes were found."
         Write-Host $dirty
-        throw "Commit or stash local changes before running this script."
+        Write-Step "Committing local changes before updating from upstream"
+        Invoke-Git add -A
+        Invoke-Git commit -m "chore: save local changes before upstream update"
     }
 
     Write-Step "Checking remotes and branches"
@@ -104,10 +106,14 @@ try {
         throw
     }
 
+    Write-Step "Pushing updated branches to $OriginRemote"
+    Invoke-Git push $OriginRemote $MainBranch
+    Invoke-Git push $OriginRemote $DevBranch
+
     Write-Step "Done"
     Write-Host "Development branch $DevBranch now includes the latest $MainBranch."
     Write-Host "Safety backup branch: $backupBranch"
-    Write-Host "This script did not push. Push manually after reviewing the result."
+    Write-Host "Pushed $MainBranch and $DevBranch to $OriginRemote."
 }
 catch {
     Write-Host ""
