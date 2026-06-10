@@ -84,6 +84,7 @@ use codex_tools::shell_type_for_model_and_features;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::sync::Arc;
+use tracing::instrument;
 use tracing::warn;
 
 const MULTI_AGENT_V2_NAMESPACE_DESCRIPTION: &str = "Tools for spawning and managing sub-agents.";
@@ -146,6 +147,7 @@ struct CoreToolPlanContext<'a> {
     wait_agent_timeouts: WaitAgentTimeoutOptions,
 }
 
+#[instrument(level = "trace", skip_all)]
 pub(crate) fn build_tool_router(
     turn_context: &TurnContext,
     params: ToolRouterParams<'_>,
@@ -154,6 +156,7 @@ pub(crate) fn build_tool_router(
     ToolRouter::from_parts(registry, model_visible_specs)
 }
 
+#[instrument(level = "trace", skip_all)]
 fn build_tool_specs_and_registry(
     turn_context: &TurnContext,
     params: ToolRouterParams<'_>,
@@ -184,6 +187,7 @@ fn build_tool_specs_and_registry(
     build_model_visible_specs_and_registry(turn_context, planned_tools)
 }
 
+#[instrument(level = "trace", skip_all)]
 fn build_model_visible_specs_and_registry(
     turn_context: &TurnContext,
     planned_tools: PlannedTools,
@@ -547,6 +551,7 @@ fn code_mode_namespace_descriptions(
     namespace_descriptions
 }
 
+#[instrument(level = "trace", skip_all)]
 fn add_tool_sources(context: &CoreToolPlanContext<'_>, planned_tools: &mut PlannedTools) {
     add_shell_tools(context, planned_tools);
     add_mcp_resource_tools(context, planned_tools);
@@ -827,6 +832,7 @@ fn add_extension_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mut Pl
     );
 }
 
+#[instrument(level = "trace", skip_all)]
 fn append_tool_search_executor(
     context: &CoreToolPlanContext<'_>,
     planned_tools: &mut PlannedTools,
