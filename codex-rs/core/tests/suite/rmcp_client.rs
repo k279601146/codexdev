@@ -2,6 +2,7 @@
 
 use anyhow::Context as _;
 use anyhow::ensure;
+use core_test_support::test_codex::local_selections;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::ffi::OsString;
@@ -120,7 +121,7 @@ fn user_turn_with_permission_profile(
     model: String,
     permission_profile: PermissionProfile,
 ) -> Op {
-    let cwd = fixture.cwd.path().to_path_buf();
+    let cwd = fixture.config.cwd.clone();
     let (sandbox_policy, permission_profile) =
         turn_permission_fields(permission_profile, cwd.as_path());
     Op::UserInput {
@@ -128,12 +129,11 @@ fn user_turn_with_permission_profile(
             text: text.into(),
             text_elements: Vec::new(),
         }],
-        environments: None,
         final_output_json_schema: None,
         responsesapi_client_metadata: None,
         additional_context: Default::default(),
         thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
-            cwd: Some(cwd),
+            environments: Some(local_selections(cwd)),
             approval_policy: Some(AskForApproval::Never),
             sandbox_policy: Some(sandbox_policy),
             permission_profile,
