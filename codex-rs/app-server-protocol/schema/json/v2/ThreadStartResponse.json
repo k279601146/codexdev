@@ -2281,6 +2281,18 @@
     }
   },
   "properties": {
+    "activePermissionProfile": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ActivePermissionProfile"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Named or implicit built-in profile that produced the active permissions, when known."
+    },
     "approvalPolicy": {
       "$ref": "#/definitions/AskForApproval"
     },
@@ -2318,6 +2330,14 @@
           "type": "null"
         }
       ]
+    },
+    "runtimeWorkspaceRoots": {
+      "default": [],
+      "description": "Thread-scoped runtime workspace roots used to materialize `:workspace_roots`.",
+      "items": {
+        "$ref": "#/definitions/AbsolutePathBuf"
+      },
+      "type": "array"
     },
     "sandbox": {
       "allOf": [

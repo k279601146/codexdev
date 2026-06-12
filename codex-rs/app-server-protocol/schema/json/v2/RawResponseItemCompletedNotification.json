@@ -759,6 +759,7 @@
               "type": "string"
             },
             "result": {
+              "default": "",
               "type": "string"
             },
             "revised_prompt": {
@@ -780,7 +781,6 @@
           },
           "required": [
             "id",
-            "result",
             "status",
             "type"
           ],
