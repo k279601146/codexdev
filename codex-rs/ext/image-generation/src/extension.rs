@@ -18,6 +18,9 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use crate::backend::CodexImagesBackend;
 use crate::tool::ImageGenerationTool;
 
+const T3_PROVIDER_NAME: &str = "MyService";
+const T3_IDE_JWT_ENV_KEY: &str = "MYIDE_IDE_JWT";
+
 #[derive(Clone)]
 struct ImageGenerationExtension {
     auth_manager: Arc<AuthManager>,
@@ -34,8 +37,7 @@ impl From<&Config> for ImageGenerationExtensionConfig {
     /// Resolves whether standalone image generation should be available for a thread.
     fn from(config: &Config) -> Self {
         Self {
-            // Core selects this executor per turn using the feature flag or model metadata.
-            available: config.model_provider.is_openai(),
+            available: standalone_image_generation_available_for_provider(&config.model_provider),
             provider: config.model_provider.clone(),
             codex_home: config.codex_home.clone(),
         }
@@ -79,7 +81,7 @@ impl ToolContributor for ImageGenerationExtension {
         let Some(config) = thread_store.get::<ImageGenerationExtensionConfig>() else {
             return Vec::new();
         };
-        if !config.available || !self.auth_manager.current_auth_uses_codex_backend() {
+        if !config.available || !standalone_image_generation_auth_available(&config.provider) {
             return Vec::new();
         }
 
@@ -94,10 +96,70 @@ impl ToolContributor for ImageGenerationExtension {
     }
 }
 
+fn standalone_image_generation_available_for_provider(provider: &ModelProviderInfo) -> bool {
+    provider.name == T3_PROVIDER_NAME
+        && provider.env_key.as_deref() == Some(T3_IDE_JWT_ENV_KEY)
+        && provider.base_url.is_some()
+        && !provider.requires_openai_auth
+}
+
+fn standalone_image_generation_auth_available(provider: &ModelProviderInfo) -> bool {
+    let Some(env_key) = provider.env_key.as_deref() else {
+        return false;
+    };
+
+    std::env::var(env_key)
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false)
+}
+
 /// Installs the standalone image-generation extension contributors.
 pub fn install(registry: &mut ExtensionRegistryBuilder<Config>, auth_manager: Arc<AuthManager>) {
     let extension = Arc::new(ImageGenerationExtension { auth_manager });
     registry.thread_lifecycle_contributor(extension.clone());
     registry.config_contributor(extension.clone());
     registry.tool_contributor(extension);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn t3_provider() -> ModelProviderInfo {
+        ModelProviderInfo {
+            name: T3_PROVIDER_NAME.to_string(),
+            base_url: Some("https://gateway.example.com/v1".to_string()),
+            env_key: Some(T3_IDE_JWT_ENV_KEY.to_string()),
+            requires_openai_auth: false,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn t3_provider_can_enable_standalone_image_generation() {
+        assert!(standalone_image_generation_available_for_provider(
+            &t3_provider()
+        ));
+    }
+
+    #[test]
+    fn provider_must_match_t3_gateway_auth_shape() {
+        let mut provider = t3_provider();
+        provider.name = "OpenAI".to_string();
+        assert!(!standalone_image_generation_available_for_provider(
+            &provider
+        ));
+
+        let mut provider = t3_provider();
+        provider.requires_openai_auth = true;
+        assert!(!standalone_image_generation_available_for_provider(
+            &provider
+        ));
+
+        let mut provider = t3_provider();
+        provider.env_key = Some("OPENAI_API_KEY".to_string());
+        assert!(!standalone_image_generation_available_for_provider(
+            &provider
+        ));
+    }
 }
